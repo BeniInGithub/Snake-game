@@ -5,5 +5,5 @@ You can get started by cloning it to your computer:
 Download the requirements:
 
 ```
-pip install pygame enum
+pip install pygame
 ```

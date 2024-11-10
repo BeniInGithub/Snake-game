@@ -22,6 +22,7 @@ FOOD_RED = (231, 76, 60)
 FOOD_GOLD = (241, 196, 15)
 FOOD_PURPLE = (155, 89, 182)
 FOOD_BLUE = (52, 152, 219)
+FOOD_GREEN = (46, 204, 113)
 BACKGROUND_COLOR = (44, 62, 80)
 GRID_COLOR = (52, 73, 94)
 OBSTACLE_COLOR = (149, 165, 166)
@@ -480,7 +481,7 @@ class SnakeGame:
             size = base_size + pulse
             
             # Glow effect (outer circle)
-            glow_color = tuple(min(255, c + 50) for c in food.type.color)  # Lighter version
+            glow_color = tuple(min(255, c + 50) for c in food.type.color)
             pygame.draw.circle(self.screen, glow_color, (x, y), size + 4, 2)
             
             # Main food body
@@ -492,7 +493,7 @@ class SnakeGame:
             pygame.draw.circle(self.screen, (255, 255, 255), highlight_pos, highlight_size)
             
             # Add specific styling based on food type
-            if food.type.color == FOOD_RED:  # Normal food
+            if food.type.color == FOOD_RED:  # Apple
                 # Add apple leaf
                 leaf_points = [
                     (x - 1, y - size - 2),
@@ -501,7 +502,28 @@ class SnakeGame:
                 ]
                 pygame.draw.polygon(self.screen, (46, 204, 113), leaf_points)
             
-            elif food.type.color == FOOD_GOLD:  # Bonus food
+            elif food.type.color == FOOD_BLUE:  # Blueberry
+                # Add sparkle effect
+                for i in range(4):
+                    angle = food.animation_counter + i * (math.pi/2)
+                    spark_x = x + math.cos(angle) * (size + 2)
+                    spark_y = y + math.sin(angle) * (size + 2)
+                    pygame.draw.circle(self.screen, (100, 200, 255), (spark_x, spark_y), 2)
+                # Add leaf
+                leaf_points = [(x + 2, y - size), (x + 4, y - size - 3), (x, y - size)]
+                pygame.draw.polygon(self.screen, (46, 204, 113), leaf_points)
+            
+            elif food.type.color == FOOD_GREEN:  # Emerald
+                # Add crystalline effect
+                for i in range(3):
+                    angle = food.animation_counter + i * (2*math.pi/3)
+                    line_start = (x + math.cos(angle) * size/2,
+                                y + math.sin(angle) * size/2)
+                    line_end = (x + math.cos(angle) * (size + 2),
+                              y + math.sin(angle) * (size + 2))
+                    pygame.draw.line(self.screen, (100, 255, 150), line_start, line_end, 2)
+            
+            elif food.type.color == FOOD_GOLD:  # Golden fruit
                 # Add star points around
                 for i in range(8):
                     angle = food.animation_counter + i * (math.pi/4)
@@ -509,7 +531,7 @@ class SnakeGame:
                     star_y = y + math.sin(angle) * (size + 3)
                     pygame.draw.circle(self.screen, (255, 215, 0), (star_x, star_y), 1)
             
-            elif food.type.color == FOOD_PURPLE:  # Special food
+            elif food.type.color == FOOD_PURPLE:  # Magic fruit
                 # Add mystical swirl
                 swirl_points = []
                 for i in range(6):
@@ -520,16 +542,6 @@ class SnakeGame:
                     swirl_points.append((swirl_x, swirl_y))
                 if len(swirl_points) >= 2:
                     pygame.draw.lines(self.screen, (180, 120, 200), False, swirl_points, 2)
-            
-            elif food.type.color == FOOD_BLUE:  # Speed food
-                # Add speed lines
-                for i in range(3):
-                    angle = food.animation_counter + i * (2*math.pi/3)
-                    line_start = (x + math.cos(angle) * (size + 2), 
-                                y + math.sin(angle) * (size + 2))
-                    line_end = (x + math.cos(angle) * (size + 6),
-                              y + math.sin(angle) * (size + 6))
-                    pygame.draw.line(self.screen, (100, 200, 255), line_start, line_end, 2)
             
             # Add subtle shadow
             shadow_surface = pygame.Surface((GRID_SIZE, GRID_SIZE), pygame.SRCALPHA)

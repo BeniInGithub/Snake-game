@@ -26,6 +26,9 @@ BACKGROUND_COLOR = (44, 62, 80)
 GRID_COLOR = (52, 73, 94)
 OBSTACLE_COLOR = (149, 165, 166)
 PORTAL_COLOR = (142, 68, 173)
+MENU_HIGHLIGHT = (52, 152, 219)  # Light blue highlight
+MENU_SELECTED = (46, 204, 113)   # Green for selected item
+MENU_HOVER = (41, 128, 185)      # Darker blue for hover
 
 class GameMode(Enum):
     CLASSIC = "Classic"
@@ -73,34 +76,50 @@ class Portal:
 
 class SnakeGame:
     def __init__(self):
+        # Initialize display
         self.screen = pygame.display.set_mode((WINDOW_SIZE, WINDOW_SIZE))
-        pygame.display.set_caption('Enhanced Snake Game')
-        self.clock = pygame.time.Clock()
+        pygame.display.set_caption("Snake Game")
         
-        # Load fonts
-        try:
-            self.font = pygame.font.Font("arial.ttf", 36)
-            self.big_font = pygame.font.Font("arial.ttf", 48)
-            self.small_font = pygame.font.Font("arial.ttf", 24)
-        except:
-            self.font = pygame.font.SysFont("arial", 36)
-            self.big_font = pygame.font.SysFont("arial", 48)
-            self.small_font = pygame.font.SysFont("arial", 24)
-
-        # Define food types
+        # Initialize fonts
+        self.font = pygame.font.Font(None, 48)
+        self.small_font = pygame.font.Font(None, 32)
+        
+        # Initialize food types
         self.food_types = {
-            'normal': FoodType(FOOD_RED, 1, 0.5),
-            'golden': FoodType(FOOD_GOLD, 5, 0.2),
-            'speed': FoodType(FOOD_BLUE, 2, 0.15),
-            'special': FoodType(FOOD_PURPLE, 3, 0.15)
+            'normal': FoodType(FOOD_RED, 10, 0.7),
+            'bonus': FoodType(FOOD_GOLD, 20, 0.15),
+            'special': FoodType(FOOD_PURPLE, 15, 0.1),
+            'speed': FoodType(FOOD_BLUE, 5, 0.05)
         }
-
-        # Initialize menus
-        self.menu_active = True
-        self.game_mode = GameMode.CLASSIC
+        
+        # Initialize high scores
         self.high_scores = self.load_high_scores()
         
+        # Initialize game state
+        self.selected_mode = GameMode.CLASSIC
+        self.game_mode = GameMode.CLASSIC
+        self.in_menu = True
+        self.game_over = False
+        self.score = 0
+        
+        # Initialize snake and game elements
+        self.direction = Direction.RIGHT
+        self.snake = []
+        self.foods = []
+        self.power_ups = []
+        self.obstacles = []
+        self.portals = []
+        self.particles = []
+        self.active_power_ups = {}
+        self.game_speed = 10
+        self.time_left = 60 * 30
+        
+        # Initialize game
         self.reset_game()
+
+        # Add these new attributes
+        self.selected_menu_item = 0
+        self.menu_hover = -1
 
     def load_high_scores(self):
         # Initialize with default values
@@ -111,6 +130,12 @@ class SnakeGame:
             self.high_scores[self.game_mode] = self.score
 
     def reset_game(self):
+        # Store menu state
+        current_mode = self.game_mode
+        current_selected_mode = self.selected_mode
+        current_in_menu = self.in_menu
+
+        # Reset game elements
         self.direction = Direction.RIGHT
         center = GRID_COUNT//2
         self.snake = [(center-i, center) for i in range(3)]
@@ -118,19 +143,18 @@ class SnakeGame:
         self.power_ups = []
         self.obstacles = []
         self.portals = []
-        self.generate_foods(3)
+        self.generate_foods(20)
         self.score = 0
         self.game_over = False
         self.particles = []
         self.active_power_ups = {}
         self.game_speed = 10
-        self.time_left = 60 * 30  # 60 seconds at 30 FPS
-        
-        # Generate obstacles and portals based on game mode
-        if self.game_mode == GameMode.MAZE:
-            self.generate_maze()
-        elif self.game_mode == GameMode.PORTAL:
-            self.generate_portals()
+        self.time_left = 60 * 30
+
+        # Restore menu state
+        self.game_mode = current_mode
+        self.selected_mode = current_selected_mode
+        self.in_menu = current_in_menu
 
     def generate_maze(self):
         # Generate random maze-like obstacles
@@ -174,55 +198,107 @@ class SnakeGame:
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE:
-                    self.menu_active = False
+                
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                    sys.exit()
+            
+                # Menu navigation with arrow keys
+                elif event.key == pygame.K_UP:
+                    current_index = list(GameMode).index(self.selected_mode)
+                    self.selected_mode = list(GameMode)[(current_index - 1) % len(GameMode)]
+            
+                elif event.key == pygame.K_DOWN:
+                    current_index = list(GameMode).index(self.selected_mode)
+                    self.selected_mode = list(GameMode)[(current_index + 1) % len(GameMode)]
+            
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):  # Added SPACE key
+                    self.game_mode = self.selected_mode
+                    self.in_menu = False
                     self.reset_game()
-                elif event.key == pygame.K_1:
-                    self.game_mode = GameMode.CLASSIC
-                elif event.key == pygame.K_2:
-                    self.game_mode = GameMode.MAZE
-                elif event.key == pygame.K_3:
-                    self.game_mode = GameMode.TIME_TRIAL
-                elif event.key == pygame.K_4:
-                    self.game_mode = GameMode.PORTAL
+        
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # Left click
+                    # Check if clicked on any mode
+                    mouse_pos = pygame.mouse.get_pos()
+                    center_x = WINDOW_SIZE // 2
+                    center_y = WINDOW_SIZE // 2
+                    spacing = 60
+                    
+                    for i, mode in enumerate(GameMode):
+                        # Calculate text rect for collision detection
+                        text_surface = self.font.render(mode.value, True, WHITE)
+                        text_rect = text_surface.get_rect(center=(center_x, center_y - 50 + i * spacing))
+                        # Add padding to make clicking easier
+                        click_rect = text_rect.inflate(40, 20)
+                        
+                        if click_rect.collidepoint(mouse_pos):
+                            self.selected_mode = mode
+                            self.game_mode = mode
+                            self.in_menu = False
+                            self.reset_game()
+                            break
 
     def draw_menu(self):
         self.screen.fill(BACKGROUND_COLOR)
         
-        # Draw title
-        title = self.big_font.render("Enhanced Snake Game", True, WHITE)
-        title_rect = title.get_rect(center=(WINDOW_SIZE/2, WINDOW_SIZE/4))
-        self.screen.blit(title, title_rect)
-
-        # Draw mode selections
-        y_offset = WINDOW_SIZE/2
-        for i, mode in enumerate(GameMode):
-            text = self.font.render(f"{i+1}. {mode.value}", True, 
-                                  WHITE if self.game_mode == mode else GRID_COLOR)
-            rect = text.get_rect(center=(WINDOW_SIZE/2, y_offset))
-            self.screen.blit(text, rect)
-            y_offset += 50
-
-        # Draw high scores
-        y_offset += 30
-        title = self.font.render("High Scores:", True, WHITE)
-        rect = title.get_rect(center=(WINDOW_SIZE/2, y_offset))
-        self.screen.blit(title, rect)
+        # Calculate center positions
+        center_x = WINDOW_SIZE // 2
+        center_y = WINDOW_SIZE // 2
         
-        y_offset += 40
-        for mode, score in self.high_scores.items():
-            text = self.small_font.render(f"{mode.value}: {score}", True, WHITE)
-            rect = text.get_rect(center=(WINDOW_SIZE/2, y_offset))
-            self.screen.blit(text, rect)
-            y_offset += 30
-
-        # Draw start instruction
-        start_text = self.font.render("Press SPACE to Start", True, WHITE)
-        start_rect = start_text.get_rect(center=(WINDOW_SIZE/2, WINDOW_SIZE*3/4))
-        self.screen.blit(start_text, start_rect)
-
-        pygame.display.flip()
+        # Draw title
+        title_font = pygame.font.Font(None, 74)
+        title_surface = title_font.render("SNAKE GAME", True, WHITE)
+        title_rect = title_surface.get_rect(center=(center_x, center_y - 200))
+        self.screen.blit(title_surface, title_rect)
+        
+        # Draw mode options
+        menu_font = pygame.font.Font(None, 48)
+        spacing = 60
+        
+        for i, mode in enumerate(GameMode):
+            text_color = WHITE
+            bg_color = None
+            padding = 20
+            
+            # Get text dimensions
+            text_surface = menu_font.render(mode.value, True, text_color)
+            text_rect = text_surface.get_rect(center=(center_x, center_y - 50 + i * spacing))
+            
+            # Check if mouse is hovering
+            mouse_pos = pygame.mouse.get_pos()
+            if text_rect.collidepoint(mouse_pos):
+                bg_color = MENU_HOVER
+            
+            # Highlight selected mode
+            if mode == self.selected_mode:
+                bg_color = MENU_SELECTED
+                # Draw selection indicator (arrow)
+                arrow = "→ "
+                arrow_surface = menu_font.render(arrow, True, WHITE)
+                arrow_rect = arrow_surface.get_rect(right=text_rect.left - 10, centery=text_rect.centery)
+                self.screen.blit(arrow_surface, arrow_rect)
+            
+            # Draw button background if needed
+            if bg_color:
+                bg_rect = text_rect.inflate(padding * 2, padding)
+                pygame.draw.rect(self.screen, bg_color, bg_rect, border_radius=10)
+            
+            self.screen.blit(text_surface, text_rect)
+        
+        # Draw instructions
+        instruction_font = pygame.font.Font(None, 32)
+        instructions = [
+            "Use up/down or mouse to select mode",
+            "Press ENTER or click to start",
+            "Press ESC to quit"
+        ]
+        
+        for i, instruction in enumerate(instructions):
+            text_surface = instruction_font.render(instruction, True, (200, 200, 200))
+            text_rect = text_surface.get_rect(center=(center_x, WINDOW_SIZE - 150 + i * 30))
+            self.screen.blit(text_surface, text_rect)
 
     def handle_power_up(self, power_up):
         if power_up.type == PowerUpType.GHOST:
@@ -340,16 +416,34 @@ class SnakeGame:
         else:
             self.snake.pop()
 
-        # Maintain food count
-        self.generate_foods(3)
+        # Maintain higher food count
+        self.generate_foods(15)  # Increased minimum food count from 3 to 15
         self.update_particles()
 
     def draw_game_elements(self):
-        # Draw grid
+        # Draw checkered background pattern
         for x in range(GRID_COUNT):
             for y in range(GRID_COUNT):
-                pygame.draw.rect(self.screen, GRID_COLOR,
+                # Create alternating pattern
+                if (x + y) % 2 == 0:
+                    color = (40, 55, 71)  # Slightly lighter than background
+                else:
+                    color = (35, 47, 61)  # Slightly darker than background
+                    
+                pygame.draw.rect(self.screen, color,
+                               (x*GRID_SIZE, y*GRID_SIZE, GRID_SIZE, GRID_SIZE))
+                
+                # Draw subtle grid lines
+                pygame.draw.rect(self.screen, (45, 62, 80),  # Very subtle grid lines
                                (x*GRID_SIZE, y*GRID_SIZE, GRID_SIZE, GRID_SIZE), 1)
+
+        # Add subtle corner markers every 5 cells to help with navigation
+        for x in range(0, GRID_COUNT, 5):
+            for y in range(0, GRID_COUNT, 5):
+                marker_size = 3
+                marker_color = (52, 73, 94)  # Subtle marker color
+                pygame.draw.circle(self.screen, marker_color,
+                                 (x*GRID_SIZE, y*GRID_SIZE), marker_size)
 
         # Draw obstacles
         for obstacle in self.obstacles:
@@ -370,23 +464,32 @@ class SnakeGame:
                               portal.exit[1]*GRID_SIZE + GRID_SIZE//2),
                               GRID_SIZE//3)
 
-        # Draw snake
+        # Draw snake with gradient effect
         for i, segment in enumerate(self.snake):
             color = SNAKE_GREEN
+            # Create gradient effect from head to tail
+            fade_factor = 1.0 - (i / len(self.snake)) * 0.3
+            
             # Make head slightly darker
             if i == 0:
                 color = (int(color[0]*0.8), int(color[1]*0.8), int(color[2]*0.8))
+            else:
+                color = (int(color[0]*fade_factor), int(color[1]*fade_factor), int(color[2]*fade_factor))
             
             if PowerUpType.GHOST in self.active_power_ups:
                 # Make snake semi-transparent when ghost mode is active
                 color = (*color, 128)
                 self.draw_rounded_rect(self.screen, color,
-                                     (segment[0]*GRID_SIZE + 2, segment[1]*GRID_SIZE + 2,
-                                      GRID_SIZE - 4, GRID_SIZE - 4), 0.5)
+                                    (segment[0]*GRID_SIZE + 2, segment[1]*GRID_SIZE + 2,
+                                     GRID_SIZE - 4, GRID_SIZE - 4), 0.5)
             else:
+                # Draw segments with decreasing size from head to tail
+                size_reduction = (i / len(self.snake)) * 2
                 self.draw_rounded_rect(self.screen, color,
-                                     (segment[0]*GRID_SIZE + 1, segment[1]*GRID_SIZE + 1,
-                                      GRID_SIZE - 2, GRID_SIZE - 2), 0.3)
+                                    (segment[0]*GRID_SIZE + 1 + size_reduction,
+                                     segment[1]*GRID_SIZE + 1 + size_reduction,
+                                     GRID_SIZE - 2 - size_reduction*2,
+                                     GRID_SIZE - 2 - size_reduction*2), 0.3)
 
         # Draw food with animation
         for food in self.foods:
@@ -479,27 +582,41 @@ class SnakeGame:
 
     def generate_foods(self, target_count):
         """Generate food items until reaching the target count"""
-        while len(self.foods) < target_count:
+        attempts = 0
+        max_attempts = 100  # Prevent infinite loops
+        
+        while len(self.foods) < target_count and attempts < max_attempts:
             pos = (random.randint(0, GRID_COUNT-1), random.randint(0, GRID_COUNT-1))
-            if pos not in self.snake and pos not in [f.position for f in self.foods]:
+            if (pos not in self.snake and 
+                pos not in [f.position for f in self.foods] and
+                pos not in self.obstacles):  # Added obstacle check
+                
                 food_type = random.choices(
                     list(self.food_types.values()),
                     weights=[ft.probability for ft in self.food_types.values()]
                 )[0]
                 self.foods.append(Food(pos, food_type))
+            attempts += 1
 
-    def run(self):
-        while True:
-            if self.menu_active:
-                self.handle_menu_input()
-                self.draw_menu()
-                continue
-
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    sys.exit()
-                if event.type == pygame.KEYDOWN:
+    def handle_input(self):
+        """Handle keyboard input during gameplay"""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+                
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    self.in_menu = True  # Return to menu
+                
+                # Return to menu when game is over and space is pressed
+                elif event.key == pygame.K_SPACE and self.game_over:
+                    self.in_menu = True
+                    self.game_over = False
+                    return
+                
+                # Snake direction controls (only if game is not over)
+                if not self.game_over:
                     if event.key == pygame.K_UP and self.direction != Direction.DOWN:
                         self.direction = Direction.UP
                     elif event.key == pygame.K_DOWN and self.direction != Direction.UP:
@@ -508,23 +625,54 @@ class SnakeGame:
                         self.direction = Direction.LEFT
                     elif event.key == pygame.K_RIGHT and self.direction != Direction.LEFT:
                         self.direction = Direction.RIGHT
-                    elif event.key == pygame.K_SPACE and self.game_over:
-                        self.menu_active = True
+                    
+                    # Alternative controls using WASD
+                    elif event.key == pygame.K_w and self.direction != Direction.DOWN:
+                        self.direction = Direction.UP
+                    elif event.key == pygame.K_s and self.direction != Direction.UP:
+                        self.direction = Direction.DOWN
+                    elif event.key == pygame.K_a and self.direction != Direction.RIGHT:
+                        self.direction = Direction.LEFT
+                    elif event.key == pygame.K_d and self.direction != Direction.LEFT:
+                        self.direction = Direction.RIGHT
 
-            self.screen.fill(BACKGROUND_COLOR)
-            self.update()
-            self.draw_game_elements()
+    def draw(self):
+        """Draw the game screen"""
+        # Clear screen
+        self.screen.fill(BACKGROUND_COLOR)
+        
+        # Draw game elements
+        self.draw_game_elements()
+        
+        # Draw game over screen if needed
+        if self.game_over:
+            game_over_text = self.font.render("Game Over!", True, WHITE)
+            restart_text = self.small_font.render("Press SPACE to return to menu", True, WHITE)
+            score_text = self.small_font.render(f"Final Score: {self.score}", True, WHITE)
             
-            if self.game_over:
-                game_over_text = self.big_font.render("Game Over!", True, WHITE)
-                restart_text = self.font.render("Press SPACE for Menu", True, WHITE)
-                self.screen.blit(game_over_text, 
-                               game_over_text.get_rect(center=(WINDOW_SIZE/2, WINDOW_SIZE/2)))
-                self.screen.blit(restart_text,
-                               restart_text.get_rect(center=(WINDOW_SIZE/2, WINDOW_SIZE/2 + 60)))
+            game_over_rect = game_over_text.get_rect(center=(WINDOW_SIZE//2, WINDOW_SIZE//2 - 50))
+            restart_rect = restart_text.get_rect(center=(WINDOW_SIZE//2, WINDOW_SIZE//2 + 20))
+            score_rect = score_text.get_rect(center=(WINDOW_SIZE//2, WINDOW_SIZE//2 + 60))
+            
+            self.screen.blit(game_over_text, game_over_rect)
+            self.screen.blit(restart_text, restart_rect)
+            self.screen.blit(score_text, score_rect)
 
+    def run(self):
+        """Main game loop"""
+        clock = pygame.time.Clock()
+        
+        while True:
+            if self.in_menu:
+                self.handle_menu_input()
+                self.draw_menu()
+            else:
+                self.handle_input()
+                self.update()
+                self.draw()
+            
             pygame.display.flip()
-            self.clock.tick(self.game_speed * 3)
+            clock.tick(30)
 
 if __name__ == "__main__":
     game = SnakeGame()

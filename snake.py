@@ -146,7 +146,7 @@ class SnakeGame:
         # Reset game elements
         self.direction = Direction.RIGHT
         center = GRID_COUNT // 2
-        self.snake = [(center - i, center) for i in range(3)]
+        self.snake = [(center - i, center) for i in range(3)]  # Ensure the snake starts in the center
         self.foods = []
         self.power_ups = []
         self.obstacles = []
@@ -241,8 +241,16 @@ class SnakeGame:
                             break
 
     def draw_menu(self):
-        self.screen.fill(BACKGROUND_COLOR)
+        # Set a vibrant gradient background for the menu
+        for y in range(WINDOW_SIZE):
+            # Create a gradient effect from dark teal to light teal
+            color = (0, int(255 * (y / WINDOW_SIZE)), 128)  # Teal gradient
+            pygame.draw.line(self.screen, color, (0, y), (WINDOW_SIZE, y))
         
+        # Add a subtle pattern (optional)
+        for x in range(0, WINDOW_SIZE, 20):
+            pygame.draw.line(self.screen, (255, 255, 255, 50), (x, 0), (x, WINDOW_SIZE), 1)
+
         # Calculate center positions
         center_x = WINDOW_SIZE // 2
         center_y = WINDOW_SIZE // 2
@@ -258,7 +266,7 @@ class SnakeGame:
         spacing = 60
         
         for i, mode in enumerate(GameMode):
-            text_color = WHITE
+            text_color = WHITE  # Keep text color white for contrast
             bg_color = None
             padding = 20
             
@@ -269,11 +277,11 @@ class SnakeGame:
             # Check if mouse is hovering
             mouse_pos = pygame.mouse.get_pos()
             if text_rect.collidepoint(mouse_pos):
-                bg_color = MENU_HOVER
-            
+                bg_color = MENU_HOVER  # Highlight color on hover
+                
             # Highlight selected mode
             if mode == self.selected_mode:
-                bg_color = MENU_SELECTED
+                bg_color = MENU_SELECTED  # Selected mode color
                 # Draw selection indicator (arrow)
                 arrow = "→ "
                 arrow_surface = menu_font.render(arrow, True, WHITE)
@@ -425,6 +433,23 @@ class SnakeGame:
                 pygame.draw.rect(self.screen, (45, 62, 80),  # Very subtle grid lines
                                (x*GRID_SIZE, y*GRID_SIZE, GRID_SIZE, GRID_SIZE), 1)
 
+        # Draw snake (simplified and more visible)
+        for i, segment in enumerate(self.snake):
+            # Make head a different color
+            if i == 0:
+                color = (0, 255, 0)  # Bright green for head
+            else:
+                # Gradient from bright to darker green for body
+                brightness = 255 - (i * 20)  # Gradually get darker
+                color = (0, max(brightness, 50), 0)
+            
+            # Draw each segment as a simple rectangle with padding
+            pygame.draw.rect(self.screen, color,
+                            (segment[0]*GRID_SIZE + 2,  # Add small padding
+                             segment[1]*GRID_SIZE + 2,
+                             GRID_SIZE - 4,
+                             GRID_SIZE - 4))
+
         # Add subtle corner markers every 5 cells to help with navigation
         for x in range(0, GRID_COUNT, 5):
             for y in range(0, GRID_COUNT, 5):
@@ -442,33 +467,6 @@ class SnakeGame:
         # Draw portals with animation
         if self.game_mode == GameMode.PORTAL:
             self.draw_portals()
-
-        # Draw snake with gradient effect
-        for i, segment in enumerate(self.snake):
-            color = SNAKE_GREEN
-            # Create gradient effect from head to tail
-            fade_factor = 1.0 - (i / len(self.snake)) * 0.3
-            
-            # Make head slightly darker
-            if i == 0:
-                color = (int(color[0]*0.8), int(color[1]*0.8), int(color[2]*0.8))
-            else:
-                color = (int(color[0]*fade_factor), int(color[1]*fade_factor), int(color[2]*fade_factor))
-            
-            if PowerUpType.GHOST in self.active_power_ups:
-                # Make snake semi-transparent when ghost mode is active
-                color = (*color, 128)
-                self.draw_rounded_rect(self.screen, color,
-                                    (segment[0]*GRID_SIZE + 2, segment[1]*GRID_SIZE + 2,
-                                     GRID_SIZE - 4, GRID_SIZE - 4), 0.5)
-            else:
-                # Draw segments with decreasing size from head to tail
-                size_reduction = (i / len(self.snake)) * 2
-                self.draw_rounded_rect(self.screen, color,
-                                    (segment[0]*GRID_SIZE + 1 + size_reduction,
-                                     segment[1]*GRID_SIZE + 1 + size_reduction,
-                                     GRID_SIZE - 2 - size_reduction*2,
-                                     GRID_SIZE - 2 - size_reduction*2), 0.3)
 
         # Draw food with enhanced styling
         for food in self.foods:
@@ -694,7 +692,7 @@ class SnakeGame:
         self.screen.fill(BACKGROUND_COLOR)
         
         # Draw game elements
-        self.draw_game_elements()
+        self.draw_game_elements()  # Ensure this is called to draw the snake
         
         # Draw game over screen if needed
         if self.game_over:

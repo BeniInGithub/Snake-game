@@ -72,7 +72,11 @@ class Portal:
     def __init__(self, entrance, exit):
         self.entrance = entrance
         self.exit = exit
-        self.cooldown = 0
+        self.animation_counter = 0
+        self.cooldown = 0  # Cooldown timer
+        self.is_active = True  # Whether portal can be used
+        self.teleporting = False  # Whether currently teleporting
+        self.teleport_timer = 0  # Timer for teleportation animation
 
 class SnakeGame:
     def __init__(self):
@@ -95,6 +99,9 @@ class SnakeGame:
         # Initialize high scores
         self.high_scores = self.load_high_scores()
         
+        # Initialize portals
+        self.portals = []
+
         # Initialize game state
         self.selected_mode = GameMode.CLASSIC
         self.game_mode = GameMode.CLASSIC
@@ -137,12 +144,12 @@ class SnakeGame:
 
         # Reset game elements
         self.direction = Direction.RIGHT
-        center = GRID_COUNT//2
-        self.snake = [(center-i, center) for i in range(3)]
+        center = GRID_COUNT // 2
+        self.snake = [(center - i, center) for i in range(3)]
         self.foods = []
         self.power_ups = []
         self.obstacles = []
-        self.portals = []
+        self.portals = []  # Reset portals
         self.generate_foods(20)
         self.score = 0
         self.game_over = False
@@ -150,6 +157,10 @@ class SnakeGame:
         self.active_power_ups = {}
         self.game_speed = 10
         self.time_left = 60 * 30
+
+        # Generate portals if the game mode is PORTAL
+        if self.game_mode == GameMode.PORTAL:
+            self.generate_portals()
 
         # Restore menu state
         self.game_mode = current_mode
@@ -173,18 +184,6 @@ class SnakeGame:
                             wall_pos not in self.snake and
                             wall_pos not in self.obstacles):
                             self.obstacles.append(wall_pos)
-
-    def generate_portals(self):
-        # Generate pairs of portals
-        for _ in range(2):
-            while True:
-                entrance = (random.randint(0, GRID_COUNT-1), random.randint(0, GRID_COUNT-1))
-                exit = (random.randint(0, GRID_COUNT-1), random.randint(0, GRID_COUNT-1))
-                if (entrance not in self.snake and exit not in self.snake and
-                    entrance not in [p.entrance for p in self.portals] and
-                    exit not in [p.exit for p in self.portals]):
-                    self.portals.append(Portal(entrance, exit))
-                    break
 
     def generate_power_up(self):
         if random.random() < 0.1 and len(self.power_ups) < 2:  # 10% chance, max 2 power-ups
@@ -319,106 +318,94 @@ class SnakeGame:
                 if power_up_type == PowerUpType.SLOW_TIME:
                     self.game_speed = 10
 
-    def handle_collision(self, new_head):
-        # Check for portal transportation
-        for portal in self.portals:
-            if new_head == portal.entrance and portal.cooldown == 0:
-                new_head = portal.exit
-                portal.cooldown = 30  # Set cooldown to prevent immediate return
-                self.create_particles(portal.entrance, PORTAL_COLOR)
-                self.create_particles(portal.exit, PORTAL_COLOR)
-                break
-
-        # Update portal cooldowns
-        for portal in self.portals:
-            if portal.cooldown > 0:
-                portal.cooldown -= 1
-
-        # Check for collisions with obstacles or walls
-        if (new_head[0] < 0 or new_head[0] >= GRID_COUNT or
-            new_head[1] < 0 or new_head[1] >= GRID_COUNT or
-            (new_head in self.obstacles and PowerUpType.GHOST not in self.active_power_ups) or
-            (new_head in self.snake and PowerUpType.GHOST not in self.active_power_ups)):
-            
-            if PowerUpType.SHIELD in self.active_power_ups:
-                del self.active_power_ups[PowerUpType.SHIELD]
-                return True
-            
-            self.game_over = True
-            self.save_high_score()
-            self.create_particles(new_head, SNAKE_GREEN)
-            return False
-            
-        return True
-
     def update(self):
         if self.game_over:
             self.update_particles()
             return
 
-        # Update various timers and effects
-        self.update_power_ups()
-        self.generate_power_up()
+        # Handle portal teleportation and cooldowns
+        for portal in self.portals:
+            if portal.teleporting:
+                portal.teleport_timer -= 1
+                if portal.teleport_timer <= 0:
+                    # Complete teleportation
+                    portal.teleporting = False
+                    head = self.snake[0]
+                    self.snake.insert(0, portal.exit)
+                    # Create particle effects at both entrance and exit
+                    self.create_particles(portal.entrance, PORTAL_COLOR, 20)
+                    self.create_particles(portal.exit, PORTAL_COLOR, 20)
+            
+            if not portal.is_active:
+                portal.cooldown -= 1
+                if portal.cooldown <= 0:
+                    portal.is_active = True
 
-        if self.game_mode == GameMode.TIME_TRIAL:
-            self.time_left -= 1
-            if self.time_left <= 0:
-                self.game_over = True
-                self.save_high_score()
+        # Only continue with normal update if not teleporting
+        if not any(portal.teleporting for portal in self.portals):
+            # Update various timers and effects
+            self.update_power_ups()
+            self.generate_power_up()
+
+            if self.game_mode == GameMode.TIME_TRIAL:
+                self.time_left -= 1
+                if self.time_left <= 0:
+                    self.game_over = True
+                    self.save_high_score()
+                    return
+
+            # Update food animations
+            for food in self.foods:
+                food.animation_counter = (food.animation_counter + 0.1) % (2 * math.pi)
+
+            head = self.snake[0]
+            
+            # Calculate new head position
+            if self.direction == Direction.UP:
+                new_head = (head[0], head[1] - 1)
+            elif self.direction == Direction.DOWN:
+                new_head = (head[0], head[1] + 1)
+            elif self.direction == Direction.LEFT:
+                new_head = (head[0] - 1, head[1])
+            else:  # Direction.RIGHT
+                new_head = (head[0] + 1, head[1])
+
+            # Handle collisions
+            if not self.handle_collision(new_head):
                 return
 
-        # Update food animations
-        for food in self.foods:
-            food.animation_counter = (food.animation_counter + 0.1) % (2 * math.pi)
+            self.snake.insert(0, new_head)
 
-        head = self.snake[0]
-        
-        # Calculate new head position
-        if self.direction == Direction.UP:
-            new_head = (head[0], head[1] - 1)
-        elif self.direction == Direction.DOWN:
-            new_head = (head[0], head[1] + 1)
-        elif self.direction == Direction.LEFT:
-            new_head = (head[0] - 1, head[1])
-        else:  # Direction.RIGHT
-            new_head = (head[0] + 1, head[1])
+            # Check for power-up collision
+            for power_up in self.power_ups[:]:
+                if new_head == power_up.position:
+                    self.handle_power_up(power_up)
+                    self.create_particles(new_head, PORTAL_COLOR)
+                    self.power_ups.remove(power_up)
 
-        # Handle collisions
-        if not self.handle_collision(new_head):
-            return
+            # Check for food collision
+            for food in self.foods[:]:
+                if new_head == food.position:
+                    points = food.type.points
+                    if PowerUpType.DOUBLE_POINTS in self.active_power_ups:
+                        points *= 2
+                    self.score += points
+                    self.create_particles(new_head, food.type.color)
+                    self.foods.remove(food)
+                    
+                    # Apply special effects
+                    if food.type.color == FOOD_BLUE:
+                        self.game_speed = 15
+                    elif food.type.color == FOOD_PURPLE:
+                        self.generate_foods(1)
+                    
+                    break
+            else:
+                self.snake.pop()
 
-        self.snake.insert(0, new_head)
-
-        # Check for power-up collision
-        for power_up in self.power_ups[:]:
-            if new_head == power_up.position:
-                self.handle_power_up(power_up)
-                self.create_particles(new_head, PORTAL_COLOR)
-                self.power_ups.remove(power_up)
-
-        # Check for food collision
-        for food in self.foods[:]:
-            if new_head == food.position:
-                points = food.type.points
-                if PowerUpType.DOUBLE_POINTS in self.active_power_ups:
-                    points *= 2
-                self.score += points
-                self.create_particles(new_head, food.type.color)
-                self.foods.remove(food)
-                
-                # Apply special effects
-                if food.type.color == FOOD_BLUE:
-                    self.game_speed = 15
-                elif food.type.color == FOOD_PURPLE:
-                    self.generate_foods(1)
-                
-                break
-        else:
-            self.snake.pop()
-
-        # Maintain higher food count
-        self.generate_foods(15)  # Increased minimum food count from 3 to 15
-        self.update_particles()
+            # Maintain higher food count
+            self.generate_foods(15)  # Increased minimum food count from 3 to 15
+            self.update_particles()
 
     def draw_game_elements(self):
         # Draw checkered background pattern
@@ -451,18 +438,9 @@ class SnakeGame:
                                  (obstacle[0]*GRID_SIZE + 1, obstacle[1]*GRID_SIZE + 1,
                                   GRID_SIZE - 2, GRID_SIZE - 2), 0.3)
 
-        # Draw portals
-        for portal in self.portals:
-            pygame.draw.circle(self.screen, PORTAL_COLOR,
-                             (portal.entrance[0]*GRID_SIZE + GRID_SIZE//2,
-                              # Continue drawing portals (entrance)
-              portal.entrance[1]*GRID_SIZE + GRID_SIZE//2),
-              GRID_SIZE//3)
-            # Draw portal exit
-            pygame.draw.circle(self.screen, PORTAL_COLOR,
-                             (portal.exit[0]*GRID_SIZE + GRID_SIZE//2,
-                              portal.exit[1]*GRID_SIZE + GRID_SIZE//2),
-                              GRID_SIZE//3)
+        # Draw portals with animation
+        if self.game_mode == GameMode.PORTAL:
+            self.draw_portals()
 
         # Draw snake with gradient effect
         for i, segment in enumerate(self.snake):
@@ -491,13 +469,75 @@ class SnakeGame:
                                      GRID_SIZE - 2 - size_reduction*2,
                                      GRID_SIZE - 2 - size_reduction*2), 0.3)
 
-        # Draw food with animation
+        # Draw food with enhanced styling
         for food in self.foods:
-            size_modifier = math.sin(food.animation_counter) * 2
-            pygame.draw.circle(self.screen, food.type.color,
-                             (food.position[0]*GRID_SIZE + GRID_SIZE//2,
-                              food.position[1]*GRID_SIZE + GRID_SIZE//2),
-                              GRID_SIZE//3 + size_modifier)
+            x = food.position[0] * GRID_SIZE + GRID_SIZE // 2
+            y = food.position[1] * GRID_SIZE + GRID_SIZE // 2
+            
+            # Base size with pulsing animation
+            base_size = GRID_SIZE * 0.4
+            pulse = math.sin(food.animation_counter) * 2
+            size = base_size + pulse
+            
+            # Glow effect (outer circle)
+            glow_color = tuple(min(255, c + 50) for c in food.type.color)  # Lighter version
+            pygame.draw.circle(self.screen, glow_color, (x, y), size + 4, 2)
+            
+            # Main food body
+            pygame.draw.circle(self.screen, food.type.color, (x, y), size)
+            
+            # Inner highlight (makes it look more 3D)
+            highlight_pos = (x - size/4, y - size/4)
+            highlight_size = size/3
+            pygame.draw.circle(self.screen, (255, 255, 255), highlight_pos, highlight_size)
+            
+            # Add specific styling based on food type
+            if food.type.color == FOOD_RED:  # Normal food
+                # Add apple leaf
+                leaf_points = [
+                    (x - 1, y - size - 2),
+                    (x + 3, y - size - 1),
+                    (x, y - size + 2)
+                ]
+                pygame.draw.polygon(self.screen, (46, 204, 113), leaf_points)
+            
+            elif food.type.color == FOOD_GOLD:  # Bonus food
+                # Add star points around
+                for i in range(8):
+                    angle = food.animation_counter + i * (math.pi/4)
+                    star_x = x + math.cos(angle) * (size + 3)
+                    star_y = y + math.sin(angle) * (size + 3)
+                    pygame.draw.circle(self.screen, (255, 215, 0), (star_x, star_y), 1)
+            
+            elif food.type.color == FOOD_PURPLE:  # Special food
+                # Add mystical swirl
+                swirl_points = []
+                for i in range(6):
+                    angle = food.animation_counter + i * (math.pi/3)
+                    dist = size + 3 - i
+                    swirl_x = x + math.cos(angle) * dist
+                    swirl_y = y + math.sin(angle) * dist
+                    swirl_points.append((swirl_x, swirl_y))
+                if len(swirl_points) >= 2:
+                    pygame.draw.lines(self.screen, (180, 120, 200), False, swirl_points, 2)
+            
+            elif food.type.color == FOOD_BLUE:  # Speed food
+                # Add speed lines
+                for i in range(3):
+                    angle = food.animation_counter + i * (2*math.pi/3)
+                    line_start = (x + math.cos(angle) * (size + 2), 
+                                y + math.sin(angle) * (size + 2))
+                    line_end = (x + math.cos(angle) * (size + 6),
+                              y + math.sin(angle) * (size + 6))
+                    pygame.draw.line(self.screen, (100, 200, 255), line_start, line_end, 2)
+            
+            # Add subtle shadow
+            shadow_surface = pygame.Surface((GRID_SIZE, GRID_SIZE), pygame.SRCALPHA)
+            shadow_radius = size + 2
+            pygame.draw.circle(shadow_surface, (0, 0, 0, 64), 
+                             (GRID_SIZE//2, GRID_SIZE//2 + 2), shadow_radius)
+            self.screen.blit(shadow_surface, 
+                            (food.position[0]*GRID_SIZE, food.position[1]*GRID_SIZE))
 
         # Draw power-ups with pulsing animation
         for power_up in self.power_ups:
@@ -667,12 +707,123 @@ class SnakeGame:
                 self.handle_menu_input()
                 self.draw_menu()
             else:
+                if self.game_mode == GameMode.PORTAL:
+                    self.update_portals()
                 self.handle_input()
                 self.update()
                 self.draw()
             
             pygame.display.flip()
             clock.tick(30)
+
+    def generate_portals(self):
+        """Generate portal pairs on the map"""
+        self.portals = []  # Clear existing portals
+        
+        # Create 2 pairs of portals
+        for _ in range(2):
+            while True:
+                entrance = (random.randint(2, GRID_COUNT-3), random.randint(2, GRID_COUNT-3))
+                exit = (random.randint(2, GRID_COUNT-3), random.randint(2, GRID_COUNT-3))
+                
+                if (entrance not in self.snake and 
+                    exit not in self.snake and 
+                    entrance not in [p.entrance for p in self.portals] and 
+                    exit not in [p.exit for p in self.portals] and
+                    abs(entrance[0] - exit[0]) + abs(entrance[1] - exit[1]) > 5):
+                    
+                    self.portals.append(Portal(entrance, exit))
+                    break
+
+    def update_portals(self):
+        """Update portal animations or logic if needed."""
+        for portal in self.portals:
+            portal.animation_counter = (portal.animation_counter + 0.1) % (2 * math.pi)
+            # Implement any additional logic for portals here
+
+    def handle_collision(self, new_head):
+        """Handle collision detection for the snake."""
+        # Check if the snake collides with the walls
+        if (new_head[0] < 0 or new_head[0] >= GRID_COUNT or
+            new_head[1] < 0 or new_head[1] >= GRID_COUNT):
+            self.game_over = True
+            self.save_high_score()
+            return False
+
+        # Check if the snake collides with itself
+        if new_head in self.snake:
+            self.game_over = True
+            self.save_high_score()
+            return False
+
+        # Check if the snake collides with obstacles
+        if new_head in self.obstacles:
+            self.game_over = True
+            self.save_high_score()
+            return False
+
+        # Check if the snake enters a portal
+        for portal in self.portals:
+            if new_head == portal.entrance and portal.is_active:
+                portal.teleporting = True
+                portal.teleport_timer = 60  # 2 seconds at 30 FPS
+                portal.is_active = False  # Deactivate portal
+                portal.cooldown = 90  # 3 seconds cooldown
+                return False  # Pause snake movement during teleportation
+
+        return True
+
+    def draw_portals(self):
+        """Draw the portals with advanced animation effects"""
+        for portal in self.portals:
+            for pos in [portal.entrance, portal.exit]:
+                # Calculate center position
+                center_x = pos[0] * GRID_SIZE + GRID_SIZE // 2
+                center_y = pos[1] * GRID_SIZE + GRID_SIZE // 2
+                
+                # Determine portal color based on state
+                portal_color = PORTAL_COLOR
+                if not portal.is_active:
+                    # Make portal appear darker/inactive
+                    portal_color = tuple(max(0, c - 100) for c in PORTAL_COLOR)
+                elif portal.teleporting:
+                    # Make portal pulse more intensely during teleportation
+                    intensity = abs(math.sin(portal.animation_counter * 2))
+                    portal_color = tuple(min(255, c + int(50 * intensity)) for c in PORTAL_COLOR)
+                
+                # Outer ring (pulsing)
+                outer_size = GRID_SIZE * 0.8 + math.sin(portal.animation_counter) * 3
+                pygame.draw.circle(self.screen, portal_color, (center_x, center_y), outer_size)
+                
+                # Inner ring (spinning)
+                inner_points = []
+                num_points = 8
+                inner_radius = GRID_SIZE * 0.4
+                for i in range(num_points):
+                    angle = portal.animation_counter + (2 * math.pi * i / num_points)
+                    x = center_x + math.cos(angle) * inner_radius
+                    y = center_y + math.sin(angle) * inner_radius
+                    inner_points.append((x, y))
+                
+                # Draw spinning inner circle segments
+                if len(inner_points) >= 2:
+                    inner_color = tuple(max(0, c - 30) for c in portal_color)  # Slightly darker
+                    pygame.draw.polygon(self.screen, inner_color, inner_points)
+                
+                # Center dot
+                center_size = GRID_SIZE * 0.2 + math.sin(portal.animation_counter * 2) * 2
+                pygame.draw.circle(self.screen, (255, 255, 255), (center_x, center_y), center_size)
+                
+                # Add particle effects
+                if portal.teleporting or (portal.is_active and random.random() < 0.3):
+                    angle = random.uniform(0, 2 * math.pi)
+                    distance = random.uniform(GRID_SIZE * 0.2, GRID_SIZE * 0.4)
+                    particle_x = center_x + math.cos(angle) * distance
+                    particle_y = center_y + math.sin(angle) * distance
+                    particle_size = random.uniform(1, 3)
+                    particle_color = (200, 147, 221) if portal.is_active else (150, 100, 170)
+                    pygame.draw.circle(self.screen, particle_color, 
+                                     (particle_x, particle_y), particle_size)
 
 if __name__ == "__main__":
     game = SnakeGame()

@@ -8,3 +8,9 @@ Download the requirements:
 ```
 pip install pygame
 ```
+
+launch the game: 
+
+```
+python3 main.py
+```

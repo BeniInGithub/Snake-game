@@ -12,5 +12,5 @@ pip install pygame
 launch the game: 
 
 ```
-python3 main.py
+python3 snake.py
 ```
